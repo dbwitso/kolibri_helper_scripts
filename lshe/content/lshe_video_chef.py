@@ -27,6 +27,7 @@ Options (key=value after the command):
 Videos should already be converted (convert_videos.sh). Don't pass
 --compress: it would convert them again at lower quality.
 """
+import collections
 import csv
 import os
 import re
@@ -64,6 +65,8 @@ class ManifestError(Exception):
 def license_for(row):
     name = re.sub(r"\s+", " ", (row.get("license") or "").strip().lower())
     name = name.replace("cc-", "cc ")
+    # A version is fine ("CC BY-SA 4.0"): Studio records the licence type only.
+    name = re.sub(r"\s+\d+(\.\d+)*$", "", name)
     if name not in LICENSES:
         raise ManifestError(
             "{}: license '{}' is not one of: {}".format(
@@ -89,7 +92,11 @@ def read_manifest(path, videos, band):
         raise ManifestError("manifest not found: {}".format(path))
     with open(path, newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
-    unbanded = [r for r in rows if not (r.get("band") or "").strip()]
+    others = collections.Counter(
+        (r.get("band") or "").strip() or "no band"
+        for r in rows
+        if (r.get("band") or "").strip() != band
+    )
     chosen = [r for r in rows if (r.get("band") or "").strip() == band]
     if not chosen:
         raise ManifestError("no rows with band {} in {}".format(band, path))
@@ -109,10 +116,10 @@ def read_manifest(path, videos, band):
             problems.append(str(e))
     if problems:
         raise ManifestError("\n  ".join(["manifest problems:"] + problems))
-    if unbanded:
+    if others:
         print(
-            "Note: {} row(s) have no band and are left out: {}".format(
-                len(unbanded), ", ".join(r.get("code") or r["file"] for r in unbanded)
+            "Left out of {}: {}".format(
+                band, ", ".join("{} {}".format(n, b) for b, n in sorted(others.items()))
             )
         )
     return sorted(chosen, key=lambda r: ((r.get("code") or "").strip(), r["title"]))

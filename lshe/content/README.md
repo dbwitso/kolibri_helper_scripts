@@ -64,9 +64,9 @@ Open `manifest.csv` in a spreadsheet and fill in, for every video:
 
 | Column | What to put |
 | --- | --- |
-| `band` | `G4-5` or `G6-7`, from the list UNESCO and the Ministry of Education approved. Rows left empty are not uploaded |
+| `band` | `G4-5` or `G6-7`, from the list UNESCO and the Ministry of Education approved. Only rows with the band being built are uploaded, so `HOLD` or an empty band keeps a video out |
 | `topic` | Optional folder in the channel, for example `Relationships` |
-| `license` | The licence the video is published under, for example `CC BY-NC-ND`. Check the producer's terms |
+| `license` | The licence the video is published under, for example `CC BY-NC-ND` or `CC BY-SA 4.0`. Check the producer's terms |
 | `copyright_holder` | Who owns the video, for example the producer |
 | `title`, `description` | Correct them if needed. They are what learners see |
 

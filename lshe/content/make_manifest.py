@@ -8,11 +8,13 @@ Each video gets one row, with its code and title read from the file name
 columns left empty before uploading:
 
     band              G4-5 or G6-7, from the list UNESCO and the Ministry
-                      approved. Rows with no band are not uploaded.
+                      approved. Only rows with the band being built are
+                      uploaded, so HOLD (or blank) keeps a video out.
     topic             optional folder in the channel, e.g. "Relationships"
     license           one of: CC BY, CC BY-SA, CC BY-ND, CC BY-NC,
                       CC BY-NC-SA, CC BY-NC-ND, All Rights Reserved,
-                      Special Permissions, Public Domain
+                      Special Permissions, Public Domain. A version
+                      number may follow, e.g. CC BY-SA 4.0
     copyright_holder  who owns the video, e.g. the producer
     description       optional
 
