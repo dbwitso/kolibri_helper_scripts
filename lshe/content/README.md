@@ -82,7 +82,8 @@ for a description used in that band's channel only), `description`, and
 `thumbnail` (optional: an image path relative to `topics.csv`). See
 `topics.csv.example`. Each topic folder, and the channel itself, gets a
 thumbnail tiled from frames of up to four of its videos, unless
-`topics.csv` names one.
+`topics.csv` names one. To use your own image for the channel, add
+`channel_thumbnail=/w/<image>.png` to the chef command (16:9 works best).
 
 ## 3. Check and upload each band
 

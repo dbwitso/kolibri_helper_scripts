@@ -23,13 +23,16 @@ Options (key=value after the command):
     band=       grade band to build, e.g. G4-5 (required)
     title=      channel title (default "LSHE <band> videos")
     description= channel description
+    channel_thumbnail= optional image for the channel (default: tiled
+                from its videos)
     topics=     optional topics CSV: a description (and optionally a
                 thumbnail image) for each topic folder. Columns: topic,
                 band (empty = every band), description, thumbnail (a path
                 relative to the CSV). See topics.csv.example.
 
 Thumbnails: each topic folder, and the channel, gets a thumbnail tiled from
-frames of up to four of its videos, unless topics.csv gives one. Pass
+frames of up to four of its videos, unless topics.csv (or channel_thumbnail=)
+gives one. Pass
 --thumbnails as well, for the videos' own thumbnails.
 
 Videos should already be converted (convert_videos.sh). Don't pass
@@ -276,7 +279,10 @@ class LSHEVideoChef(SushiChef):
             return [os.path.join(videos, r["file"]) for r in group]
 
         thumbs = os.path.join(os.getcwd(), "lshe_thumbnails")
-        kwargs["thumbnail"] = tiled_thumbnail(paths(rows), thumbs)
+        channel_thumbnail = kwargs.get("channel_thumbnail")
+        if channel_thumbnail and not os.path.isfile(channel_thumbnail):
+            sys.exit("channel thumbnail not found: {}".format(channel_thumbnail))
+        kwargs["thumbnail"] = channel_thumbnail or tiled_thumbnail(paths(rows), thumbs)
         channel = self.get_channel(**kwargs)
 
         missing = []
