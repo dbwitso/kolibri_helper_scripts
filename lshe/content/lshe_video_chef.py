@@ -23,14 +23,24 @@ Options (key=value after the command):
     band=       grade band to build, e.g. G4-5 (required)
     title=      channel title (default "LSHE <band> videos")
     description= channel description
+    topics=     optional topics CSV: a description (and optionally a
+                thumbnail image) for each topic folder. Columns: topic,
+                band (empty = every band), description, thumbnail (a path
+                relative to the CSV). See topics.csv.example.
+
+Thumbnails: each topic folder, and the channel, gets a thumbnail tiled from
+frames of up to four of its videos, unless topics.csv gives one. Pass
+--thumbnails as well, for the videos' own thumbnails.
 
 Videos should already be converted (convert_videos.sh). Don't pass
 --compress: it would convert them again at lower quality.
 """
 import collections
 import csv
+import hashlib
 import os
 import re
+import subprocess
 import sys
 
 from le_utils.constants import licenses
@@ -137,6 +147,98 @@ def video_node(row, videos):
     )
 
 
+def read_topics(path, band):
+    """{topic: {"description": ..., "thumbnail": ...}} for the band."""
+    if not path:
+        return {}
+    if not os.path.isfile(path):
+        raise ManifestError("topics file not found: {}".format(path))
+    base = os.path.dirname(os.path.abspath(path))
+    topics = {}
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        for row in csv.DictReader(f):
+            name = (row.get("topic") or "").strip()
+            row_band = (row.get("band") or "").strip()
+            if not name or (row_band and row_band != band):
+                continue
+            # A band-specific row wins over a row for every band.
+            if name in topics and not row_band:
+                continue
+            thumbnail = (row.get("thumbnail") or "").strip()
+            if thumbnail:
+                thumbnail = os.path.join(base, thumbnail)
+                if not os.path.isfile(thumbnail):
+                    raise ManifestError(
+                        "{}: thumbnail not found: {}".format(name, thumbnail)
+                    )
+            topics[name] = {
+                "description": (row.get("description") or "").strip(),
+                "thumbnail": thumbnail or None,
+            }
+    return topics
+
+
+THUMB_W, THUMB_H = 640, 360  # 16:9, as Kolibri shows thumbnails
+
+
+def video_frame(video, out):
+    """Save a frame from a quarter of the way into video, at THUMB_W x THUMB_H."""
+    duration = float(
+        subprocess.check_output(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=nw=1:nk=1",
+                video,
+            ]
+        ).strip()
+        or 0
+    )
+    fit = (
+        "scale={w}:{h}:force_original_aspect_ratio=decrease,"
+        "pad={w}:{h}:(ow-iw)/2:(oh-ih)/2".format(w=THUMB_W, h=THUMB_H)
+    )
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-ss", str(duration / 4), "-i", video]
+        + ["-frames:v", "1", "-vf", fit, out],
+        check=True,
+    )
+
+
+def tiled_thumbnail(videos, folder):
+    """A PNG tiled from frames of up to four videos (one frame if fewer)."""
+    from PIL import Image
+
+    videos = videos[:4] if len(videos) >= 4 else videos[:1]
+    key = hashlib.md5("\n".join(videos).encode("utf-8")).hexdigest()
+    out = os.path.join(folder, "tile_{}.png".format(key))
+    if os.path.isfile(out):
+        return out
+    os.makedirs(folder, exist_ok=True)
+    frames = []
+    for i, video in enumerate(videos):
+        frame = os.path.join(folder, "frame_{}_{}.png".format(key, i))
+        video_frame(video, frame)
+        frames.append(frame)
+    if len(frames) == 1:
+        os.replace(frames[0], out)
+        return out
+    tile = Image.new("RGB", (THUMB_W, THUMB_H))
+    half_w, half_h = THUMB_W // 2, THUMB_H // 2
+    for i, frame in enumerate(frames):
+        with Image.open(frame) as im:
+            tile.paste(
+                im.resize((half_w, half_h)), ((i % 2) * half_w, (i // 2) * half_h)
+            )
+        os.remove(frame)
+    tile.save(out)
+    return out
+
+
 class LSHEVideoChef(SushiChef):
     def get_channel(self, **kwargs):
         band = kwargs.get("band") or ""
@@ -151,32 +253,56 @@ class LSHEVideoChef(SushiChef):
                 band
             ),
             language=kwargs.get("language") or "en",
+            thumbnail=kwargs.get("thumbnail"),
         )
 
     def construct_channel(self, **kwargs):
-        channel = self.get_channel(**kwargs)
         manifest, videos = kwargs.get("manifest"), kwargs.get("videos")
         if not manifest or not videos:
             sys.exit("give manifest=<manifest.csv> and videos=<folder>")
+        band = kwargs.get("band") or ""
         try:
-            rows = read_manifest(manifest, videos, kwargs["band"])
+            rows = read_manifest(manifest, videos, band)
+            topic_info = read_topics(kwargs.get("topics"), band)
         except ManifestError as e:
             sys.exit(str(e))
-        topics = {}
+
+        # Group the videos by topic, keeping the manifest's order.
+        groups = collections.OrderedDict()
         for row in rows:
-            topic = (row.get("topic") or "").strip()
-            parent = channel
-            if topic:
-                if topic not in topics:
-                    topics[topic] = TopicNode(
-                        source_id="topic-" + topic.lower(), title=topic
-                    )
-                    channel.add_child(topics[topic])
-                parent = topics[topic]
-            parent.add_child(video_node(row, videos))
+            groups.setdefault((row.get("topic") or "").strip(), []).append(row)
+
+        def paths(group):
+            return [os.path.join(videos, r["file"]) for r in group]
+
+        thumbs = os.path.join(os.getcwd(), "lshe_thumbnails")
+        kwargs["thumbnail"] = tiled_thumbnail(paths(rows), thumbs)
+        channel = self.get_channel(**kwargs)
+
+        missing = []
+        for topic, group in groups.items():
+            if not topic:
+                for row in group:
+                    channel.add_child(video_node(row, videos))
+                continue
+            info = topic_info.get(topic, {})
+            if not info.get("description"):
+                missing.append(topic)
+            node = TopicNode(
+                source_id="topic-" + topic.lower(),
+                title=topic,
+                description=info.get("description") or "",
+                thumbnail=info.get("thumbnail")
+                or tiled_thumbnail(paths(group), thumbs),
+            )
+            channel.add_child(node)
+            for row in group:
+                node.add_child(video_node(row, videos))
+        if missing:
+            print("Topics with no description: {}".format(", ".join(missing)))
         print(
             "Channel '{}': {} video(s), {} topic(s).".format(
-                channel.title, len(rows), len(topics)
+                channel.title, len(rows), len([t for t in groups if t])
             )
         )
         return channel

@@ -22,6 +22,7 @@ to disk. The steps are:
 | --- | --- |
 | `Dockerfile` | The `lshe-content-tools` image: ffmpeg and ricecooker 0.8.0 |
 | `convert_videos.sh` | Converts videos to H.264 480p with AAC audio, keeping the originals |
+| `topics.csv.example` | Example topic descriptions and thumbnails |
 | `make_manifest.py` | Lists the videos in a CSV manifest, with code and title from the file names |
 | `lshe_video_chef.py` | Builds one band's channel from the manifest; `dryrun`, or upload to Studio |
 
@@ -74,6 +75,15 @@ Which videos suit which grades is not a technical decision. Use the approved
 list. Re-running `make_manifest.py` adds new videos and keeps what you
 filled in.
 
+**Topic descriptions (optional, recommended).** Studio and Kolibri show a
+description under each topic folder. Put them in `$W/topics.csv`, one row
+per topic: columns `topic`, `band` (empty means every band, or a band name
+for a description used in that band's channel only), `description`, and
+`thumbnail` (optional: an image path relative to `topics.csv`). See
+`topics.csv.example`. Each topic folder, and the channel itself, gets a
+thumbnail tiled from frames of up to four of its videos, unless
+`topics.csv` names one.
+
 ## 3. Check and upload each band
 
 ricecooker keeps its cache (`storage/`, `chefdata/`, `restore/`) in
@@ -88,8 +98,8 @@ CHEF() {
 }
 
 # Dry run: builds and checks the channel, uploads nothing.
-CHEF dryrun --thumbnails manifest=/w/manifest.csv videos=/w/h264_480p band=G4-5
-CHEF dryrun --thumbnails manifest=/w/manifest.csv videos=/w/h264_480p band=G6-7
+CHEF dryrun --thumbnails manifest=/w/manifest.csv videos=/w/h264_480p topics=/w/topics.csv band=G4-5
+CHEF dryrun --thumbnails manifest=/w/manifest.csv videos=/w/h264_480p topics=/w/topics.csv band=G6-7
 ```
 
 A dry run stops with a list of problems if any row for the band lacks a
@@ -105,7 +115,7 @@ docker run --rm --user "$(id -u):$(id -g)" -e HOME=/run \
   -v "$PWD":/code:ro -v ~/.studio_token:/secrets/studio_token:ro \
   -v "$W":/w -v "$W/chef":/run -w /run lshe-content-tools \
   python /code/lshe_video_chef.py --token=/secrets/studio_token --thumbnails \
-  manifest=/w/manifest.csv videos=/w/h264_480p band=G4-5
+  manifest=/w/manifest.csv videos=/w/h264_480p topics=/w/topics.csv band=G4-5
 ```
 
 Run it again with `band=G6-7` for the second channel.
