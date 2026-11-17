@@ -1,0 +1,15 @@
+# LSHE channels for import_channels.sh --file channels.conf
+#
+# One Kolibri channel id per line (32 hex characters). Anything after # is a
+# comment: write the channel's name and band there. Copy this file to
+# channels.conf and fill in the real ids from the channel packs.
+#
+# Learner channels (put them in a grade band with set_band_channels.py):
+# 00000000000000000000000000000000  # LSHE Grades 4-5 (band G4-5)
+# 00000000000000000000000000000000  # LSHE Grades 6-7 (band G6-7)
+#
+# Teacher channels (also list them in LSHE_TEACHER_CHANNEL_IDS in
+# docker/lshe/.env; never in a band):
+# 00000000000000000000000000000000  # CSE course for teachers
+# 00000000000000000000000000000000  # ICT in Education
+# 00000000000000000000000000000000  # AI in Education
