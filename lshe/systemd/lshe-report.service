@@ -1,0 +1,9 @@
+[Unit]
+Description=LSHE monthly report for the previous month
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# Adjust if kolibri_helper_scripts is checked out elsewhere.
+ExecStart=/opt/lshe/kolibri_helper_scripts/lshe/run_monthly_report.sh
