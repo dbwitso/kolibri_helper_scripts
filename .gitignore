@@ -5,3 +5,14 @@ __pycache__
 *.sublime-project
 *.sublime-workspace
 .Rproj.user
+
+# LSHE: local, per-server files (may hold host names or learner data)
+lshe/channels.conf
+lshe/central/centres.conf
+lshe/central/collected/
+lshe/central/combined/
+class_probe.txt
+learners.csv
+.env
+# Kolibri test home created by lshe/test
+.pytest_kolibri_home/
