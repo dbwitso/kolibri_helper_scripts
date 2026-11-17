@@ -5,17 +5,19 @@ grade band, that a centre server can import offline. They run on a
 workstation with Docker and internet access. The centre server stays offline
 and never needs either.
 
-Kolibri can't import loose video files. It imports channels, which are made
-on [Kolibri Studio](https://studio.learningequality.org) and then exported
-to disk. The steps are:
+Kolibri can't import loose video files. It imports channels: a channel
+database plus its files. The steps are:
 
 1. **Convert** the videos to H.264 480p (`convert_videos.sh`).
 2. **List** them in a manifest, and fill in band, licence and copyright
    holder (`make_manifest.py`).
-3. **Check** each band's channel with a dry run, then **upload** it to Studio
-   (`lshe_video_chef.py`, a ricecooker script) and publish it there.
-4. **Export** the published channels to disk from a Kolibri on the
-   workstation, then copy them to the centre server and import them there
+3. **Build** the channels, one per band. Either:
+   - **offline**, on this workstation (`build_offline_channels.sh`, section
+     3). This is how the LSHE channels are made; or
+   - on [Kolibri Studio](https://studio.learningequality.org)
+     (`lshe_video_chef.py`, a ricecooker script, section 5), then publish
+     them there and export them to disk.
+4. **Copy** the export to the centre server and import it there
    (`../import_channels.sh`).
 
 | File | Purpose |
@@ -24,7 +26,11 @@ to disk. The steps are:
 | `convert_videos.sh` | Converts videos to H.264 480p with AAC audio, keeping the originals |
 | `topics.csv.example` | Example topic descriptions and thumbnails |
 | `make_manifest.py` | Lists the videos in a CSV manifest, with code and title from the file names |
-| `lshe_video_chef.py` | Builds one band's channel from the manifest; `dryrun`, or upload to Studio |
+| `build_offline_channels.sh` | Builds the bands' channels offline into a channel export, with `channels.conf` |
+| `prepare_media.py` | Step one of the offline build: thumbnails and video lengths (tools image) |
+| `build_channel.py` | Step two: the channel database, with Kolibri's own schema (Kolibri image) |
+| `channel_common.py` | Reading and checking the manifest and topics, thumbnails; shared by all |
+| `lshe_video_chef.py` | Builds one band's channel for Kolibri Studio instead; `dryrun`, or upload |
 
 ## 0. Build the tools image (once)
 
@@ -85,7 +91,66 @@ thumbnail tiled from frames of up to four of its videos, unless
 `topics.csv` names one. To use your own image for the channel, add
 `channel_thumbnail=/w/<image>.png` to the chef command (16:9 works best).
 
-## 3. Check and upload each band
+## 3. Build the channels offline
+
+```sh
+./build_offline_channels.sh "$W" G4-5 G6-7
+```
+
+This needs the `lshe-content-tools` image (step 0) and the LSHE Kolibri
+image (`lshe-kolibri:latest`, built by `docker compose build` in the Kolibri
+repository's `docker/lshe`). No internet and no Studio account are needed.
+For each band it:
+
+1. makes a thumbnail for every video (a frame from a quarter of the way in)
+   and topic folder (from `topics.csv`, or frames of its videos tiled), and
+   measures each video (`prepare_media.py`, in the tools image);
+2. writes the channel database with Kolibri's own content schema and copies
+   the videos and thumbnails in by checksum (`build_channel.py`, in the
+   Kolibri image).
+
+It writes in the work folder:
+
+| Path | What it is |
+| --- | --- |
+| `offline/export/content/databases/<channel id>.sqlite3` | Each band's channel |
+| `offline/export/content/storage/` | Videos and thumbnails, named by checksum |
+| `offline/export/channels.conf` | The channel ids, for `import_channels.sh --file` |
+| `offline/media/<band>/` | Thumbnails and `media.json`; kept so re-builds are quick |
+
+This is the same layout as a Kolibri channel export (`exportchannel`,
+`exportcontent`), so the server imports it in the usual way.
+
+**Ids and versions.** The channel id comes from the band, and each video's
+ids from its code, so they are the same in every build. Each build raises
+the channel's version by one. To fix a title, change a topic or add videos,
+edit the CSVs and run the same command again. A centre that imports the new
+version keeps every learner's progress. To re-make a thumbnail, delete it
+from `offline/media/<band>/` first.
+
+The offline channels have their own ids, not the ids of the Studio channels
+of the same name. Use one or the other on a server, never both.
+
+**Checking a build.** To see the channels before a centre does, import the
+export into any Kolibri 0.16 (**Device → Channels → Import → Local drive**,
+or `kolibri manage importchannel disk <id> <export folder>` then
+`importcontent disk`).
+
+## 4. Import on the centre server
+
+Copy the **contents** of `offline/export` (or of a Studio export, below) to
+`/srv/lshe-content` on the centre server, for example from a USB drive, so
+that `/srv/lshe-content/content/` exists. Then, as in `../README.md`:
+
+```sh
+sudo ./import_channels.sh --file /srv/lshe-content/channels.conf
+sudo ./run_script.sh set_band_channels.py --band G4-5 <G4-5 channel id>
+sudo ./run_script.sh set_band_channels.py --band G6-7 <G6-7 channel id>
+```
+
+The ids are in `channels.conf`.
+
+## 5. Or: check and upload each band to Studio
 
 ricecooker keeps its cache (`storage/`, `chefdata/`, `restore/`) in
 `$W/chef`, outside the repository:
@@ -127,7 +192,7 @@ same channel: each video's id is its code, so nothing is duplicated. Each
 band is a separate channel (`LSHE G4-5 videos`, `LSHE G6-7 videos`),
 because LSHE grade bands are set per channel.
 
-## 4. Export to disk and import on the centre server
+### Export from Studio to disk
 
 On a Kolibri on the workstation (any Kolibri 0.16 with internet):
 
@@ -138,11 +203,8 @@ On a Kolibri on the workstation (any Kolibri 0.16 with internet):
    `kolibri manage exportchannel <channel_id> <folder>` and
    `kolibri manage exportcontent <channel_id> <folder>`.
 
-The export folder has a `content/` folder inside it. Copy the export
-folder's contents to `/srv/lshe-content` on the centre server, so that
-`/srv/lshe-content/content/` exists. Then put the channel ids in
-`channels.conf` and follow `../README.md`: `import_channels.sh`, then
-`set_band_channels.py` with each band's channel id.
+Put the channel ids in a `channels.conf` (see `../channels.conf.example`),
+then import as in section 4.
 
 ## Data protection
 

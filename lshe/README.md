@@ -37,6 +37,7 @@ into the container with `docker exec`.
 | `central/combine_reports.py` | central machine | One file per month: all-centre totals, missing centres |
 | `central/centres.conf.example` | central machine | Template list of centres |
 | `lshe_common.py` | Kolibri container | Shared start-up and messages for the Python scripts |
+| `content/` | workstation | Makes the LSHE video channels: converts the videos, then builds the channels offline (or on Studio). See [`content/README.md`](content/README.md) |
 
 Every shell script prints its usage with `-h`. Every Python script prints
 its usage with `--help`, for example `./run_script.sh set_class_band.py --help`.
@@ -72,7 +73,9 @@ Run the shell scripts as root (`sudo`). They write to `/var/log/lshe` and
    then the same with `--apply`.
 2. **Channels:** copy the channel packs to `/srv/lshe-content`, list the
    channel ids in `channels.conf`, then run
-   `./import_channels.sh --file channels.conf`.
+   `./import_channels.sh --file channels.conf`. The LSHE video channels
+   are built on a workstation with `content/build_offline_channels.sh`,
+   which writes the pack and its `channels.conf` together.
 3. **Teacher channels:** in the Kolibri `docker/lshe/.env`, set
    `LSHE_TEACHER_CHANNEL_IDS=<id>,<id>,<id>`, then `docker compose up -d`.
 4. **Grade bands:** set the channels of each band, then the band of each
