@@ -16,3 +16,10 @@ learners.csv
 .env
 # Kolibri test home created by lshe/test
 .pytest_kolibri_home/
+# LSHE content tools: Studio tokens and ricecooker working folders
+studio_token*
+*.token
+chef/
+chefdata/
+restore/
+.ricecookerfilecache/
