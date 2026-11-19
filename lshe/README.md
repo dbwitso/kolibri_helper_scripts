@@ -32,6 +32,8 @@ into the container with `docker exec`.
 | `run_monthly_report.sh` | centre server (host) | Writes the previous month's report |
 | `lshe_report.py` | Kolibri container | The monthly report: aggregate figures only |
 | `systemd/lshe-report.{service,timer}` | centre server (host) | Runs the report on the 1st at 02:00, Lusaka time |
+| `backup_db.sh` | centre server (host) | Backs up the Kolibri database, checks the dump, keeps 14 days |
+| `systemd/lshe-backup.{service,timer}` | centre server (host) | Runs the backup every night at 01:30, Lusaka time |
 | `mindspark_class_probe.js` | MindSpark server | Shows how learners link to classes, without personal data |
 | `central/collect_reports.sh` | central machine | Pulls the report files from every centre |
 | `central/combine_reports.py` | central machine | One file per month: all-centre totals, missing centres |
@@ -94,6 +96,7 @@ Run the shell scripts as root (`sudo`). They write to `/var/log/lshe` and
 5. **Teachers:** create them by hand in Kolibri as class coaches. They are
    not imported.
 6. **Monthly report timer:** see below.
+7. **Nightly backup timer:** see below.
 
 ## Roster import (MindSpark)
 
@@ -162,6 +165,29 @@ CRON_TZ=Africa/Lusaka
 
 The figures and files are described in the Kolibri repository's
 `docs/lshe/reporting.md`.
+
+## Nightly database backup
+
+```sh
+sudo cp systemd/lshe-backup.service systemd/lshe-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now lshe-backup.timer
+systemctl list-timers lshe-backup.timer
+sudo ./backup_db.sh        # one now, to check
+```
+
+Every night at 01:30 **Lusaka time** (`Persistent=true` catches up after a
+night the server was off), `backup_db.sh` dumps the Kolibri database to
+`/srv/lshe-backups/kolibri_<date>_nightly.dump`, checks that the dump can be
+read back, and deletes nightly dumps older than 14 days
+(`LSHE_BACKUP_KEEP_DAYS`). Dumps that `run_import.sh` takes before an import
+are never deleted. It refuses to start with less than 1 GB free. The log is
+in `/var/log/lshe/backup.log`.
+
+The dumps hold learner data (children's): they stay in `/srv/lshe-backups`
+(mode 700, files 600). A copy off the server protects against a failed disk;
+copy them only to storage that is as safe, and never to a shared drive.
+Restoring is in the Kolibri repository's `docs/lshe/deployment.md` (Backup and restore).
 
 ## Collecting reports centrally
 

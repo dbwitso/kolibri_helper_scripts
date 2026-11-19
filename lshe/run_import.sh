@@ -105,7 +105,7 @@ log "backup ok ($(du -h "$BACKUP" | cut -f1))"
 
 log "import: import_from_mindspark.py ${ARGS[*]:-}"
 if run_importer ${ARGS[@]+"${ARGS[@]}"} 2>&1 | tee -a "$LOG_FILE"; then
-  log "import done. To undo it, restore $BACKUP (see Kolibri docs/lshe/deployment.md, Restore)."
+  log "import done. To undo it, restore $BACKUP (see Kolibri docs/lshe/deployment.md, Backup and restore)."
 else
   log "ERROR import failed; it runs in one transaction, so nothing was written. Backup: $BACKUP"
   exit 1
