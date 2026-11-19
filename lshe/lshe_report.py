@@ -63,21 +63,18 @@ from lshe_common import run
 from lshe_common import warn
 import pytz  # noqa E402
 from django.db import transaction  # noqa E402
-from django.db.models import Count  # noqa E402
 from django.db.models import Min  # noqa E402
-from django.db.models import Q  # noqa E402
-from django.db.models import Sum  # noqa E402
 
 import kolibri  # noqa E402
 from kolibri.core.auth.constants.demographics import FEMALE  # noqa E402
 from kolibri.core.auth.constants.demographics import MALE  # noqa E402
 from kolibri.core.auth.constants.demographics import NOT_SPECIFIED  # noqa E402
 from kolibri.core.auth.models import Facility  # noqa E402
-from kolibri.core.auth.models import FacilityUser  # noqa E402
 from kolibri.core.auth.models import Membership  # noqa E402
-from kolibri.core.logger.models import ContentSessionLog  # noqa E402
-from kolibri.core.logger.models import ContentSummaryLog  # noqa E402
-from kolibri.core.logger.models import UserSessionLog  # noqa E402
+from kolibri.plugins.edulution.lshe_metrics import aggregate  # noqa E402
+from kolibri.plugins.edulution.lshe_metrics import learner_users  # noqa E402
+from kolibri.plugins.edulution.lshe_metrics import normalise_gender  # noqa E402
+from kolibri.plugins.edulution.lshe_metrics import per_learner  # noqa E402
 from kolibri.plugins.edulution.lshe_settings import teacher_channel_ids  # noqa E402
 from kolibri.plugins.edulution.models import LSHEMonthlyEnrolment  # noqa E402
 
@@ -120,17 +117,6 @@ def month_bounds(year, month, tz):
     else:
         end = tz.localize(datetime.datetime(year, month + 1, 1))
     return start, end
-
-
-def normalise_gender(value):
-    return value if value in (MALE, FEMALE) else NOT_SPECIFIED
-
-
-def learner_users():
-    """Users with no role who are not device superusers (soft-deleted included)."""
-    return FacilityUser.objects.filter(roles__isnull=True).exclude(
-        devicepermissions__is_superuser=True
-    )
 
 
 def current_enrolment(end):
@@ -182,73 +168,8 @@ def get_enrolment(month, end, now):
 
 
 # ---------------------------------------------------------------- metrics
-
-
-def per_learner(user_ids, start, end, excluded_channels):
-    """{metric: {user_id: value}} for the month."""
-    not_teacher = ~Q(channel_id__in=excluded_channels) if excluded_channels else Q()
-    # Completed items, read once and folded in Python: timestamps are
-    # stored as text, so comparing parsed datetimes here is exact. Older
-    # logs may lack completion_timestamp; fall back to end_timestamp.
-    first_done = {}
-    completions = defaultdict(int)
-    for user_id, completed_at, ended_at in ContentSummaryLog.objects.filter(
-        not_teacher, user_id__in=user_ids, progress__gte=1
-    ).values_list("user_id", "completion_timestamp", "end_timestamp"):
-        done_at = completed_at or ended_at
-        if done_at is None:
-            continue
-        if user_id not in first_done or done_at < first_done[user_id]:
-            first_done[user_id] = done_at
-        if start <= done_at < end:
-            completions[user_id] += 1
-    video = dict(
-        ContentSessionLog.objects.filter(
-            not_teacher,
-            user_id__in=user_ids,
-            kind="video",
-            end_timestamp__gte=start,
-            end_timestamp__lt=end,
-        )
-        .values("user_id")
-        .annotate(s=Sum("time_spent"))
-        .values_list("user_id", "s")
-    )
-    sessions = dict(
-        UserSessionLog.objects.filter(
-            user_id__in=user_ids,
-            start_timestamp__gte=start,
-            start_timestamp__lt=end,
-        )
-        .values("user_id")
-        .annotate(n=Count("id"))
-        .values_list("user_id", "n")
-    )
-    return {
-        "reached_new": {
-            u for u, t in first_done.items() if t is not None and start <= t < end
-        },
-        "reached_cumulative": {
-            u for u, t in first_done.items() if t is not None and t < end
-        },
-        "completions": completions,
-        "video": video,
-        "sessions": sessions,
-    }
-
-
-def aggregate(members, data):
-    """Figures for a group. `members` is {user_id: deleted}."""
-    ids = set(members)
-    return {
-        "enrolled_learners": sum(1 for d in members.values() if not d),
-        "active_learners": len(ids & set(data["sessions"])),
-        "sessions": sum(data["sessions"].get(u, 0) for u in ids),
-        "reached_new": len(ids & data["reached_new"]),
-        "reached_cumulative": len(ids & data["reached_cumulative"]),
-        "completions": sum(data["completions"].get(u, 0) for u in ids),
-        "video_watch_seconds": int(round(sum(data["video"].get(u) or 0 for u in ids))),
-    }
+# per_learner and aggregate are in kolibri.plugins.edulution.lshe_metrics,
+# shared with the coach's Monthly reports page.
 
 
 def build_rows(centre_code, month, enrolment, data):
