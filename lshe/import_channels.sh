@@ -22,8 +22,10 @@ if [ "$1" = "-h" ] || [ "$1" = "--help" ] || [ $# -eq 0 ]; then
   echo "  A channels file has one channel id per line; anything after # is a"
   echo "  comment (see channels.conf.example)."
   echo
+  echo "  At the end it shows what the server has (content_status.py)."
   echo "  Afterwards: put the teacher channel ids in LSHE_TEACHER_CHANNEL_IDS in"
   echo "  docker/lshe/.env, and set the grade bands (set_band_channels.py)."
+  echo "  To copy a pack in first, from a USB drive or over SSH: get_content.sh."
   echo
   echo "Examples"
   echo "  ./import_channels.sh --file channels.conf"
@@ -106,7 +108,13 @@ else
   log "importing ${#CHANNELS[@]} channel(s) from $CONTENT_DIR"
 fi
 
-manage() { docker exec "$KOLIBRI" kolibri manage "$@"; }
+# Kolibri's start-up chatter about network tools (the container has no
+# "ip") is not an error; keep it out of the output and log.
+manage() {
+  docker exec "$KOLIBRI" kolibri manage "$@" 2>&1 | grep -v -e "ip: not found" -e "Neither \`ifconfig\`" \
+    -e "being overridden by environment variable" -e "Running Kolibri with the following settings"
+  return "${PIPESTATUS[0]}"
+}
 
 FAILED=()
 for id in "${CHANNELS[@]}"; do
@@ -130,3 +138,9 @@ if [[ ${#FAILED[@]} -gt 0 ]]; then
   exit 1
 fi
 log "all ${#CHANNELS[@]} channel(s) imported"
+
+# What the server has now, and anything still missing.
+SCRIPTS="${LSHE_HELPER_SCRIPTS_MOUNT:-/opt/kolibri_helper_scripts}"
+if docker exec "$KOLIBRI" test -f "$SCRIPTS/lshe/content_status.py"; then
+  docker exec "$KOLIBRI" python -u "$SCRIPTS/lshe/content_status.py" 2>&1 | tee -a "$LOG_FILE" || true
+fi

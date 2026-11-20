@@ -25,6 +25,11 @@ into the container with `docker exec`.
 | `run_import.sh` | centre server (host) | MindSpark roster import: dry run, database backup, then import |
 | `import_from_mindspark.py` | Kolibri container | Imports learners and their classes from MindSpark (read-only) |
 | `import_channels.sh` | centre server (host) | Imports channels and their content, from disk or another Kolibri server |
+| `get_content.sh` | centre server (host) | Copies a channel pack in from a USB drive or over SSH, checks every file, imports it |
+| `export_channels.sh` | any LSHE server (host) | Makes a channel pack of this server's channels, e.g. on a USB drive |
+| `content_status.py` | Kolibri container | What content the server has, and anything missing |
+| `content_lib.sh` | (sourced) | Reading and checking channel packs, for the two scripts above |
+| `check_server.sh` | centre server (host) | Checks the whole server, read-only: services, timers, content, classes, backups |
 | `channels.conf.example` | centre server | Template list of channel ids for `import_channels.sh --file` |
 | `run_script.sh` | centre server (host) | Runs one of the Python scripts in the container |
 | `set_band_channels.py` | Kolibri container | Sets the channels of a grade band |
@@ -40,6 +45,10 @@ into the container with `docker exec`.
 | `central/centres.conf.example` | central machine | Template list of centres |
 | `lshe_common.py` | Kolibri container | Shared start-up and messages for the Python scripts |
 | `content/` | workstation | Makes the LSHE video channels: converts the videos, then builds the channels offline (or on Studio). See [`content/README.md`](content/README.md) |
+
+Where everything is on a server, and what to do when something is wrong:
+the Kolibri repository's `docs/lshe/where-is-what.md`; `./check_server.sh`
+checks it all, read-only.
 
 Every shell script prints its usage with `-h`. Every Python script prints
 its usage with `--help`, for example `./run_script.sh set_class_band.py --help`.
@@ -127,15 +136,58 @@ The output has no learner personal data. Delete it once it has been read.
 
 ## Channels
 
+Content travels as a **channel pack**: a folder with `content/databases`,
+`content/storage` and a `channels.conf` listing its channel ids (with names
+and bands). `build_offline_channels.sh` makes one from the videos;
+`export_channels.sh` makes one from a server that has the channels.
+
+**From a USB drive** (or any folder on this server):
+
 ```sh
-cp channels.conf.example channels.conf      # fill in the channel ids
-./import_channels.sh --file channels.conf   # from /srv/lshe-content
-./import_channels.sh --network http://<other server>:8080 --file channels.conf
+./get_content.sh --find                                  # which packs are on the drive
+./get_content.sh --from /media/<drive>/<pack> --import   # copy, check, import
 ```
 
-Each channel is imported, then all its content. Re-running is safe, and
-anything already on the server is skipped. The log is in
-`/var/log/lshe/channels.log`.
+**From another machine over SSH** (another centre server over NetBird, or a
+workstation):
+
+```sh
+./get_content.sh --from-ssh root@<server>:/srv/lshe-export/<pack> --import
+```
+
+**From a distribution server on the network** (no pack needed):
+
+```sh
+./import_channels.sh --network http://<server>:8080 --file channels.conf
+```
+
+This works only from a Kolibri that is **not** an LSHE centre server: LSHE
+servers switch off Kolibri's public content API, so between two centre
+servers use a pack (USB drive, or `--from-ssh`).
+
+`get_content.sh` copies into `/srv/lshe-content` (resuming if interrupted:
+run it again), checks free space first, checks every file against its
+checksum (Kolibri names files by their MD5) and removes any damaged one so
+the next run copies it again, adds the pack's channels to
+`/srv/lshe-content/channels.conf`, and with `--import` imports them. Each
+import ends with `content_status.py`: every channel's version, band,
+resources and missing files.
+
+**Making a pack** for another school:
+
+```sh
+./export_channels.sh --all --to /media/<drive>     # every channel, onto a USB drive
+./export_channels.sh --all                          # into /srv/lshe-export, to fetch over SSH
+```
+
+The copy on the drive is checked file by file before it says it is ready.
+Unmount the drive (`umount /media/<drive>`) before unplugging it.
+
+Re-running any of these is safe: content already on the server is skipped.
+Logs: `/var/log/lshe/content.log` (copying, packs) and
+`/var/log/lshe/channels.log` (imports). Then set the grade bands
+(`set_band_channels.py`) and, for teacher channels,
+`LSHE_TEACHER_CHANNEL_IDS` in the Kolibri `docker/lshe/.env`.
 
 ## Monthly report timer
 
